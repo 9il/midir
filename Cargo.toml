@@ -35,8 +35,7 @@ jack-sys = { version = "0.5", optional = true }
 libc = { version = "0.2.21", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Try to be compatible with a wide range of alsa versions
-alsa = ">=0.9.0, <0.13"
+# UMP ALSA backend is stubbed (no `alsa` crate) until `/dev/snd/ump*` is wired.
 libc = "0.2.21"
 
 [target.'cfg(target_os = "ios")'.dependencies]
