@@ -55,7 +55,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             "midir-test",
             |stamp, message, log| {
                 // The last of the three callback parameters is the object that we pass in as last parameter of `connect`.
-                println!("{}: {:?} (len = {})", stamp, message, message.len());
+                println!("{}: {:?} (len = {})", stamp, message, message.len() /* ump words */);
                 log.extend_from_slice(message);
             },
             log_all_bytes,
@@ -72,9 +72,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             if input.trim() == "q" {
                 break;
             } else {
-                conn_out.send(&[144, 60, 1])?;
+                conn_out.send(&[0x2090_3C_01])?;
                 sleep(Duration::from_millis(200));
-                conn_out.send(&[144, 60, 0])?;
+                conn_out.send(&[0x2080_3C_00])?;
             }
         }
         println!("Closing connections");

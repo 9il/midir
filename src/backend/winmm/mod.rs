@@ -185,7 +185,7 @@ struct HandlerData<T> {
     sysex_buffer: SysexBuffer,
     in_handle: Option<MidiInHandle>,
     ignore_flags: Ignore,
-    callback: Box<dyn FnMut(u64, &[u8], &mut T) + Send + 'static>,
+    callback: Box<dyn FnMut(u64, &[u32], &mut T) + Send + 'static>,
     user_data: Option<T>,
 }
 
@@ -229,113 +229,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let port_number = match port.current_port_number() {
-            Some(p) => p,
-            None => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        let mut handler_data = Box::new(HandlerData {
-            message: MidiMessage::new(),
-            sysex_buffer: SysexBuffer([null_mut(); MIDIR_SYSEX_BUFFER_COUNT]),
-            in_handle: None,
-            ignore_flags: self.ignore_flags,
-            callback: Box::new(callback),
-            user_data: Some(data),
-        });
-
-        let mut in_handle: MaybeUninit<HMIDIIN> = MaybeUninit::uninit();
-        let handler_data_ptr: *mut HandlerData<T> = &mut *handler_data;
-        let result = unsafe {
-            midiInOpen(
-                in_handle.as_mut_ptr(),
-                port_number as UINT,
-                Some(handler::handle_input::<T> as *const () as DWORD_PTR),
-                Some(handler_data_ptr as DWORD_PTR),
-                CALLBACK_FUNCTION,
-            )
-        };
-        if result == MMSYSERR_ALLOCATED {
-            return Err(ConnectError::other(
-                "could not create Windows MM MIDI input port (MMSYSERR_ALLOCATED)",
-                self,
-            ));
-        } else if result != MMSYSERR_NOERROR {
-            return Err(ConnectError::other(
-                "could not create Windows MM MIDI input port",
-                self,
-            ));
-        }
-        let in_handle = unsafe { in_handle.assume_init() };
-
-        // Allocate and init the sysex buffers.
-        for i in 0..MIDIR_SYSEX_BUFFER_COUNT {
-            handler_data.sysex_buffer.0[i] = Box::into_raw(Box::new(MIDIHDR {
-                lpData: PSTR(unsafe {
-                    alloc(Layout::from_size_align_unchecked(
-                        MIDIR_SYSEX_BUFFER_SIZE,
-                        1,
-                    ))
-                }),
-                dwBufferLength: MIDIR_SYSEX_BUFFER_SIZE as u32,
-                dwBytesRecorded: 0,
-                dwUser: i as DWORD_PTR, // We use the dwUser parameter as buffer indicator
-                dwFlags: 0,
-                lpNext: ptr::null_mut(),
-                reserved: 0,
-                dwOffset: 0,
-                dwReserved: unsafe { mem::zeroed() },
-            }));
-
-            // TODO: are those buffers ever freed if an error occurs here (altough these calls probably only fail with out-of-memory)?
-            // TODO: close port in case of error?
-
-            let result = unsafe {
-                midiInPrepareHeader(
-                    in_handle,
-                    handler_data.sysex_buffer.0[i],
-                    mem::size_of::<MIDIHDR>() as u32,
-                )
-            };
-            if result != MMSYSERR_NOERROR {
-                return Err(ConnectError::other(
-                    "could not initialize Windows MM MIDI input port (PrepareHeader)",
-                    self,
-                ));
-            }
-
-            // Register the buffer.
-            let result = unsafe {
-                midiInAddBuffer(
-                    in_handle,
-                    handler_data.sysex_buffer.0[i],
-                    mem::size_of::<MIDIHDR>() as u32,
-                )
-            };
-            if result != MMSYSERR_NOERROR {
-                return Err(ConnectError::other(
-                    "could not initialize Windows MM MIDI input port (AddBuffer)",
-                    self,
-                ));
-            }
-        }
-
-        handler_data.in_handle = Some(MidiInHandle(Mutex::new(in_handle)));
-
-        // We can safely access (a copy of) `in_handle` here, although
-        // it has been copied into the Mutex already, because the callback
-        // has not been called yet.
-        let result = unsafe { midiInStart(in_handle) };
-        if result != MMSYSERR_NOERROR {
-            unsafe { midiInClose(in_handle) };
-            return Err(ConnectError::other(
-                "could not start Windows MM MIDI input port",
-                self,
-            ));
-        }
-
-        Ok(MidiInputConnection { handler_data })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -541,34 +438,8 @@ impl MidiOutput {
         port: &MidiOutputPort,
         _port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<MidiOutput>> {
-        let port_number = match port.current_port_number() {
-            Some(p) => p,
-            None => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-        let mut out_handle: MaybeUninit<HMIDIOUT> = MaybeUninit::uninit();
-        let result = unsafe {
-            midiOutOpen(
-                out_handle.as_mut_ptr(),
-                port_number as UINT,
-                None,
-                None,
-                CALLBACK_NULL,
-            )
-        };
-        if result == MMSYSERR_ALLOCATED {
-            return Err(ConnectError::other(
-                "could not create Windows MM MIDI output port (MMSYSERR_ALLOCATED)",
-                self,
-            ));
-        } else if result != MMSYSERR_NOERROR {
-            return Err(ConnectError::other(
-                "could not create Windows MM MIDI output port",
-                self,
-            ));
-        }
-        Ok(MidiOutputConnection {
-            out_handle: unsafe { out_handle.assume_init() },
-        })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -578,109 +449,11 @@ impl MidiOutputConnection {
         MidiOutput // In this API this is a noop
     }
 
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        let nbytes = message.len();
-        if nbytes == 0 {
-            return Err(SendError::InvalidData(
-                "message to be sent must not be empty",
-            ));
-        }
-
-        if message[0] == 0xF0 {
-            // Sysex message
-            // Allocate buffer for sysex data and copy message
-            let mut buffer = message.to_vec();
-
-            // Create and prepare MIDIHDR structure.
-            let mut sysex = MIDIHDR {
-                lpData: PSTR(buffer.as_mut_ptr()),
-                dwBufferLength: nbytes as u32,
-                dwBytesRecorded: 0,
-                dwUser: 0,
-                dwFlags: 0,
-                lpNext: ptr::null_mut(),
-                reserved: 0,
-                dwOffset: 0,
-                dwReserved: unsafe { mem::zeroed() },
-            };
-
-            let result = unsafe {
-                midiOutPrepareHeader(
-                    self.out_handle,
-                    &mut sysex,
-                    mem::size_of::<MIDIHDR>() as u32,
-                )
-            };
-
-            if result != MMSYSERR_NOERROR {
-                return Err(SendError::Other(
-                    "preparation for sending sysex message failed (OutPrepareHeader)",
-                ));
-            }
-
-            // Send the message.
-            loop {
-                let result = unsafe {
-                    midiOutLongMsg(self.out_handle, &sysex, mem::size_of::<MIDIHDR>() as u32)
-                };
-                if result == MIDIERR_NOTREADY {
-                    sleep(Duration::from_millis(1));
-                    continue;
-                } else {
-                    if result != MMSYSERR_NOERROR {
-                        return Err(SendError::Other("sending sysex message failed"));
-                    }
-                    break;
-                }
-            }
-
-            loop {
-                let result = unsafe {
-                    midiOutUnprepareHeader(
-                        self.out_handle,
-                        &mut sysex,
-                        mem::size_of::<MIDIHDR>() as u32,
-                    )
-                };
-                if result == MIDIERR_STILLPLAYING {
-                    sleep(Duration::from_millis(1));
-                    continue;
-                } else {
-                    break;
-                }
-            }
-        } else {
-            // Channel or system message.
-            // Make sure the message size isn't too big.
-            if nbytes > 3 {
-                return Err(SendError::InvalidData(
-                    "non-sysex message must not be longer than 3 bytes",
-                ));
-            }
-
-            // Pack MIDI bytes into double word.
-            let mut packet: u32 = 0;
-            let ptr = std::ptr::addr_of_mut!(packet).cast::<u8>();
-            for (i, item) in message.iter().enumerate().take(nbytes) {
-                unsafe { *ptr.add(i) = *item };
-            }
-
-            // Send the message immediately.
-            loop {
-                let result = unsafe { midiOutShortMsg(self.out_handle, packet) };
-                if result == MIDIERR_NOTREADY {
-                    sleep(Duration::from_millis(1));
-                    continue;
-                } else {
-                    if result != MMSYSERR_NOERROR {
-                        return Err(SendError::Other("sending non-sysex message failed"));
-                    }
-                    break;
-                }
-            }
-        }
-
-        Ok(())
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 }
 

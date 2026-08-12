@@ -51,7 +51,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         in_port,
         "midir-read-input",
         move |stamp, message, _| {
-            println!("{}: {:?} (len = {})", stamp, message, message.len());
+            println!("{}: {:?} (len = {})", stamp, message, message.len() /* ump words */);
         },
         (),
     )?;

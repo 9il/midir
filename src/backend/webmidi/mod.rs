@@ -157,46 +157,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let input = port.input.clone();
-        let _ = input.open(); // NOTE: asyncronous!
-
-        let ignore_flags = self.ignore_flags;
-        let user_data = Arc::new(Mutex::new(Some(data)));
-
-        let closure = {
-            let user_data = user_data.clone();
-
-            let closure = Closure::wrap(Box::new(move |event: MidiMessageEvent| {
-                let time = (event.time_stamp() * 1000.0) as u64; // ms -> us
-                let buffer = event.data().unwrap();
-
-                let status = buffer[0];
-                if !(status == 0xF0 && ignore_flags.contains(Ignore::Sysex)
-                    || status == 0xF1 && ignore_flags.contains(Ignore::Time)
-                    || status == 0xF8 && ignore_flags.contains(Ignore::Time)
-                    || status == 0xFE && ignore_flags.contains(Ignore::ActiveSense))
-                {
-                    callback(
-                        time,
-                        &buffer[..],
-                        user_data.lock().unwrap().as_mut().unwrap(),
-                    );
-                }
-            }) as Box<dyn FnMut(MidiMessageEvent)>);
-
-            input.set_onmidimessage(Some(closure.as_ref().unchecked_ref()));
-
-            closure
-        };
-
-        Ok(MidiInputConnection {
-            ignore_flags,
-            input,
-            user_data,
-            closure,
-        })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -282,10 +246,8 @@ impl MidiOutput {
         port: &MidiOutputPort,
         _port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<MidiOutput>> {
-        let _ = port.output.open(); // NOTE: asyncronous!
-        Ok(MidiOutputConnection {
-            output: port.output.clone(),
-        })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -299,9 +261,10 @@ impl MidiOutputConnection {
         MidiOutput {}
     }
 
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        self.output
-            .send(unsafe { Uint8Array::view(message) }.as_ref())
-            .map_err(|_| SendError::Other("JavaScript exception"))
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 }

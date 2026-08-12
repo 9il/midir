@@ -12,7 +12,7 @@ use crate::{Ignore, MidiMessage};
 
 const OUTPUT_RINGBUFFER_SIZE: usize = 16384;
 
-type CallbackFn<T> = dyn FnMut(u64, &[u8], &mut T) + Send;
+type CallbackFn<T> = dyn FnMut(u64, &[u32], &mut T) + Send;
 
 struct InputHandlerData<T> {
     port: Option<MidiPort>,
@@ -92,7 +92,7 @@ impl MidiInput {
 
     fn activate_callback<F, T: Send>(&mut self, callback: F, data: T) -> Box<InputHandlerData<T>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
         let handler_data = Box::new(InputHandlerData {
             port: None,
@@ -119,40 +119,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let mut handler_data = self.activate_callback(callback, data);
-
-        // Create port ...
-        let dest_port = match self
-            .client
-            .as_mut()
-            .unwrap()
-            .register_midi_port(port_name, PortFlags::PortIsInput)
-        {
-            Ok(p) => p,
-            Err(()) => {
-                return Err(ConnectError::other("could not register JACK port", self));
-            }
-        };
-
-        // ... and connect it to the output
-        if self
-            .client
-            .as_mut()
-            .unwrap()
-            .connect(&port.name, dest_port.get_name())
-            .is_err()
-        {
-            return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self));
-        }
-
-        handler_data.port = Some(dest_port);
-
-        Ok(MidiInputConnection {
-            handler_data,
-            client: self.client.take(),
-        })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     pub fn create_virtual<F, T: Send>(
@@ -162,29 +132,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let mut handler_data = self.activate_callback(callback, data);
-
-        // Create port
-        let port = match self
-            .client
-            .as_mut()
-            .unwrap()
-            .register_midi_port(port_name, PortFlags::PortIsInput)
-        {
-            Ok(p) => p,
-            Err(()) => {
-                return Err(ConnectError::other("could not register JACK port", self));
-            }
-        };
-
-        handler_data.port = Some(port);
-
-        Ok(MidiInputConnection {
-            handler_data,
-            client: self.client.take(),
-        })
+        let _ = (port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -341,38 +292,8 @@ impl MidiOutput {
         port: &MidiOutputPort,
         port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<MidiOutput>> {
-        let mut handler_data = self.activate_callback();
-
-        // Create port ...
-        let source_port = match self
-            .client
-            .as_mut()
-            .unwrap()
-            .register_midi_port(port_name, PortFlags::PortIsOutput)
-        {
-            Ok(p) => p,
-            Err(()) => {
-                return Err(ConnectError::other("could not register JACK port", self));
-            }
-        };
-
-        // ... and connect it to the input
-        if self
-            .client
-            .as_mut()
-            .unwrap()
-            .connect(source_port.get_name(), &port.name)
-            .is_err()
-        {
-            return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self));
-        }
-
-        handler_data.port = Some(source_port);
-
-        Ok(MidiOutputConnection {
-            handler_data,
-            client: self.client.take(),
-        })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     pub fn create_virtual(
@@ -404,27 +325,11 @@ impl MidiOutput {
 }
 
 impl MidiOutputConnection {
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        let nbytes = message.len();
-
-        // Write full message to buffer
-        let written = self.handler_data.buff_message.write(message);
-        debug_assert!(
-            written == nbytes,
-            "not enough bytes written to ALSA ringbuffer `message`"
-        );
-        let nbytes_slice = unsafe {
-            slice::from_raw_parts(
-                &nbytes as *const usize as *const u8,
-                mem::size_of_val(&nbytes),
-            )
-        };
-        let written = self.handler_data.buff_size.write(nbytes_slice);
-        debug_assert!(
-            written == mem::size_of_val(&nbytes),
-            "not enough bytes written to ALSA ringbuffer `size`"
-        );
-        Ok(())
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 
     pub fn close(mut self) -> MidiOutput {

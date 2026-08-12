@@ -97,13 +97,11 @@ impl MidiInput {
         self.ports().into_iter().find(|port| port.id() == id)
     }
 
-    /// Connect to a specified MIDI input port in order to receive messages.
-    /// For each incoming MIDI message, the provided `callback` function will
-    /// be called. The first parameter of the callback function is a timestamp
-    /// (in microseconds) designating the time since some unspecified point in
-    /// the past (which will not change during the lifetime of a
-    /// `MidiInputConnection`). The second parameter contains the actual bytes
-    /// of the MIDI message.
+    /// Connect to a specified MIDI input port in order to receive Universal MIDI
+    /// Packets (UMP). For each incoming event packet's word slice, the provided
+    /// `callback` is called. The first parameter is a timestamp in microseconds
+    /// since an unspecified origin (stable for the connection lifetime). The
+    /// second parameter is native-endian UMP words (`u32`).
     ///
     /// Additional data that should be passed whenever the callback is
     /// invoked can be specified by `data`. Use the empty tuple `()` if
@@ -125,7 +123,7 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
         match self.imp.connect(&port.imp, port_name, callback, data) {
             Ok(imp) => Ok(MidiInputConnection { imp }),
@@ -167,7 +165,7 @@ impl<T: Send> crate::os::unix::VirtualInput<T> for MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
         match self.imp.create_virtual(port_name, callback, data) {
             Ok(imp) => Ok(MidiInputConnection { imp }),
@@ -341,10 +339,12 @@ impl MidiOutputConnection {
         }
     }
 
-    /// Send a message to the port that this output connection is connected to.
-    /// The message must be a valid MIDI message (see https://www.midi.org/specifications-old/item/table-1-summary-of-midi-message).
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        self.imp.send(message)
+    /// Send Universal MIDI Packet words to the connected port.
+    ///
+    /// `words` must contain one or more complete UMPs as native-endian `u32`
+    /// values (length is message-type dependent: 1–4 words per UMP).
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        self.imp.send(words)
     }
 }
 

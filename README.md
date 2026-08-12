@@ -1,31 +1,29 @@
-# midir [![crates.io](https://img.shields.io/crates/v/midir.svg)](https://crates.io/crates/midir)
+# midir (UMP fork)
 
-Cross-platform, realtime MIDI processing in Rust.
+**This is a public fork of [Boddlnagg/midir](https://github.com/Boddlnagg/midir) maintained at [github.com/9il/midir](https://github.com/9il/midir).**
 
-## Features
-**midir** is inspired by [RtMidi](https://github.com/thestk/rtmidi) and supports the same features*, including virtual ports (except on Windows) and full SysEx support – but with a rust-y API!
+Breaking change vs upstream: the public API carries **Universal MIDI Packets (UMP)** as native-endian `u32` words — **not** classic MIDI 1.0 byte streams. It is **not** wire-compatible with upstream midir 0.10/0.11.
 
-<sup>* With the exception of message queues, but these can be implemented on top of callbacks using e.g. Rust's channels.</sup>
+There is **no** dependency on the [`midi2`](https://crates.io/crates/midi2) crate; this crate only transports raw UMP words.
 
-**midir** currently supports the following platforms/backends:
-- [x] ALSA (Linux)
-- [x] WinMM (Windows)
-- [x] CoreMIDI (macOS, iOS)
-- [x] WinRT (Windows 8+), enable the `winrt` feature
-- [x] Jack (Linux, macOS), enable the `jack` feature
-- [x] Web MIDI (Chrome, Opera, perhaps others browsers)
-- [x] Android (API 29+, NDK AMidi + JNI)
+## API (UMP)
 
-A higher-level API for parsing and assembling MIDI messages might be added in the future.
+- Input callback: `FnMut(u64 /*µs*/, &[u32] /*UMP words*/, &mut T)`
+- Output: `MidiOutputConnection::send(words: &[u32])`
+- Apple (macOS / iOS): CoreMIDI `Protocol::Midi20` + `MIDIEventList` / `MIDISendEventList`
+- Linux / Windows / Jack / WebMIDI / Android: enumerate may work; **connect/send are stubs** until each backend passes [`docs/ump-backend-compliance.md`](docs/ump-backend-compliance.md)
 
-## Documentation & Example
-API docs can be found at [docs.rs](https://docs.rs/crate/midir/). You can find some examples in the [`examples`](examples/) directory. Or simply run `cargo run --example test_play` after cloning this repository.
+## Platform status
 
-### Android
-- Requires Android API 29+ and the Android NDK (r20b+).
-- Build (example, to remove before merging):
-  - Install: `cargo install cargo-ndk`
-  - Targets: `rustup target add aarch64-linux-android`
-  - Build: `cargo ndk -t arm64-v8a -o ./app/src/main/jniLibs build --release`
-- Permissions/features:
-  - Manifest should declare `<uses-feature android:name="android.software.midi" android:required="false" />` (not needed for USB/BLE MIDI).
+| Backend | Enumerate | UMP I/O |
+|---------|-----------|---------|
+| CoreMIDI (macOS, iOS) | yes | yes (MIDI 2.0 EventList) |
+| ALSA | yes* | stub (pending ALSA UMP) |
+| WinMM / WinRT | yes* | stub (pending Windows MIDI Services UMP) |
+| Jack / WebMIDI / Android | yes* | stub |
+
+\*Legacy enumeration code may still list ports; opening for UMP returns a clear error until compliance is green.
+
+## License
+
+MIT (same as upstream midir).

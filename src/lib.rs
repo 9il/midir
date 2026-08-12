@@ -38,20 +38,19 @@ impl Ignore {
 }
 
 /// A MIDI structure used internally by some backends to store incoming
-/// messages. Each message represents one and only one MIDI message.
-/// The timestamp is represented as the elapsed microseconds since
-/// a point in time that is arbitrary, but does not change for the
-/// lifetime of a given MidiInputConnection.
+/// Universal MIDI Packet words. The timestamp is microseconds since an
+/// arbitrary point that does not change for the lifetime of a connection.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct MidiMessage {
-    bytes: Vec<u8>,
+    words: Vec<u32>,
     timestamp: u64,
 }
 
 impl MidiMessage {
     fn new() -> MidiMessage {
         MidiMessage {
-            bytes: vec![],
+            words: vec![],
             timestamp: 0,
         }
     }

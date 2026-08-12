@@ -336,139 +336,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let ignore_flags = self.ignore_flags;
-
-        let open = jni_with_env(|env| -> Result<_, JniError> {
-            let mgr = get_midi_manager(env).map_err(|_| JniError::NullPtr("get_midi_manager"))?;
-            let devices = get_devices(env, &mgr).map_err(|_| JniError::NullPtr("get_devices"))?;
-            let info = devices
-                .into_iter()
-                .find(|info| {
-                    env.call_method(info, "getId", "()I", &[])
-                        .and_then(|v| v.i())
-                        .map(|id| id == port.device_id)
-                        .unwrap_or(false)
-                })
-                .ok_or(JniError::NullPtr("device not found"))?;
-
-            let dev_global = open_midi_device_global(env, &info, &mgr)
-                .map_err(|_| JniError::NullPtr("open_device"))?;
-            let amidi = unsafe { amidi_from_java(env, &dev_global) }
-                .map_err(|_| JniError::NullPtr("amidi_from_java"))?;
-            Ok((dev_global, amidi))
-        });
-
-        let (java_device, amidi_device) = match open {
-            Ok(v) => v,
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        // Open device output port for reading
-        let mut out_port: *mut AMidiOutputPort = std::ptr::null_mut();
-        let status = unsafe {
-            AMidiOutputPort_open(
-                amidi_device as *const AMidiDevice,
-                port.port_number,
-                &mut out_port,
-            )
-        };
-        if status != 0 || out_port.is_null() {
-            unsafe { AMidiDevice_release(amidi_device) };
-            let _ = jni_with_env(|env| {
-                close_java_device(env, &java_device);
-                Ok(())
-            });
-            return Err(ConnectError::other(
-                "could not open Android MIDI output port",
-                self,
-            ));
-        }
-
-        let stop = Arc::new(AtomicBool::new(false));
-        let stop_clone = stop.clone();
-        let out_port_addr = out_port as usize;
-
-        // Spawn reader thread
-        let thread: JoinHandle<T> = thread::Builder::new()
-            .name("midir Android input handler".to_string())
-            .spawn(move || {
-                let out_port_ptr = out_port_addr as *mut AMidiOutputPort;
-                let mut buf = vec![0u8; 1024];
-                let mut opcode: i32 = 0;
-                let mut nbytes: usize = 0;
-                let mut ts_ns: i64 = 0;
-
-                let mut user_data = data;
-
-                while !stop_clone.load(Ordering::Relaxed) {
-                    let rc = unsafe {
-                        AMidiOutputPort_receive(
-                            out_port_ptr,
-                            &mut opcode as *mut _,
-                            buf.as_mut_ptr(),
-                            buf.len(),
-                            &mut nbytes as *mut _,
-                            &mut ts_ns as *mut _,
-                        )
-                    };
-                    if rc < 0 {
-                        std::thread::sleep(Duration::from_millis(2));
-                        continue;
-                    }
-
-                    // `AMidiOutputPort_receive` returns the number of messages
-                    // received (0 or 1). On 0 it leaves `opcode`, `nbytes` and
-                    // `ts_ns` untouched, so without this check the loop keeps
-                    // seeing the *previous* message: once a first message has
-                    // arrived `opcode` stays `AMIDI_OPCODE_DATA` and the
-                    // callback is re-invoked with stale data in a tight,
-                    // sleep-free loop (a stale `AMIDI_OPCODE_FLUSH` spins the
-                    // thread just as hard).
-                    if rc == 0 {
-                        std::thread::sleep(Duration::from_millis(1));
-                        continue;
-                    }
-
-                    if opcode == AMIDI_OPCODE_FLUSH {
-                        continue;
-                    }
-
-                    if opcode == AMIDI_OPCODE_DATA && nbytes > 0 {
-                        let message = &buf[..nbytes];
-                        let status = message[0];
-
-                        // Filter according to Ignore flags
-                        if (status == 0xF0 && ignore_flags.contains(Ignore::Sysex))
-                            || (status == 0xF1 && ignore_flags.contains(Ignore::Time))
-                            || (status == 0xF8 && ignore_flags.contains(Ignore::Time))
-                            || (status == 0xFE && ignore_flags.contains(Ignore::ActiveSense))
-                        {
-                            continue;
-                        }
-
-                        let ts_us = if ts_ns > 0 { (ts_ns as u64) / 1000 } else { 0 };
-                        callback(ts_us, message, &mut user_data);
-                    } else {
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                }
-
-                user_data
-            })
-            .map_err(|_| {
-                ConnectError::other("could not start Android input handler thread", self)
-            })?;
-
-        Ok(MidiInputConnection {
-            java_device,
-            amidi_device,
-            out_port,
-            stop,
-            thread: Some(thread),
-            ignore_flags,
-        })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     // Virtual ports are not supported when using AMidi without a MidiDeviceService (Just throw a err)
@@ -479,12 +350,10 @@ impl MidiInput {
         _data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        Err(ConnectError::other(
-            "virtual MIDI input ports are not supported on Android",
-            self,
-        ))
+        let _ = (port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -603,57 +472,8 @@ impl MidiOutput {
         port: &MidiOutputPort,
         _port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<MidiOutput>> {
-        let open = jni_with_env(|env| -> Result<_, JniError> {
-            let mgr = get_midi_manager(env).map_err(|_| JniError::NullPtr("get_midi_manager"))?;
-            let devices = get_devices(env, &mgr).map_err(|_| JniError::NullPtr("get_devices"))?;
-            let info = devices
-                .into_iter()
-                .find(|info| {
-                    env.call_method(info, "getId", "()I", &[])
-                        .and_then(|v| v.i())
-                        .map(|id| id == port.device_id)
-                        .unwrap_or(false)
-                })
-                .ok_or(JniError::NullPtr("device not found"))?;
-
-            let dev_global = open_midi_device_global(env, &info, &mgr)
-                .map_err(|_| JniError::NullPtr("open_device"))?;
-            let amidi = unsafe { amidi_from_java(env, &dev_global) }
-                .map_err(|_| JniError::NullPtr("amidi_from_java"))?;
-            Ok((dev_global, amidi))
-        });
-
-        let (java_device, amidi_device) = match open {
-            Ok(v) => v,
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        // Open device input port for sending
-        let mut in_port: *mut AMidiInputPort = std::ptr::null_mut();
-        let status = unsafe {
-            AMidiInputPort_open(
-                amidi_device as *const AMidiDevice,
-                port.port_number,
-                &mut in_port,
-            )
-        };
-        if status != 0 || in_port.is_null() {
-            unsafe { AMidiDevice_release(amidi_device) };
-            let _ = jni_with_env(|env| {
-                close_java_device(env, &java_device);
-                Ok(())
-            });
-            return Err(ConnectError::other(
-                "could not open Android MIDI input port",
-                self,
-            ));
-        }
-
-        Ok(MidiOutputConnection {
-            java_device,
-            amidi_device,
-            in_port,
-        })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     // Similar
@@ -661,10 +481,8 @@ impl MidiOutput {
         self,
         _port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<Self>> {
-        Err(ConnectError::other(
-            "virtual MIDI output ports are not supported on Android",
-            self,
-        ))
+        let _ = port_name;
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -691,18 +509,10 @@ impl MidiOutputConnection {
         MidiOutput {}
     }
 
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        if message.is_empty() {
-            return Err(SendError::InvalidData(
-                "message to be sent must not be empty",
-            ));
-        }
-
-        let rc = unsafe { AMidiInputPort_send(self.in_port, message.as_ptr(), message.len()) };
-        if rc < 0 {
-            return Err(SendError::Other("AMidiInputPort_send failed"));
-        }
-
-        Ok(())
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 }

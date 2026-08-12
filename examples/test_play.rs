@@ -52,9 +52,9 @@ fn run() -> Result<(), Box<dyn Error>> {
             const NOTE_OFF_MSG: u8 = 0x80;
             const VELOCITY: u8 = 0x64;
             // We're ignoring errors in here
-            let _ = conn_out.send(&[NOTE_ON_MSG, note, VELOCITY]);
+            let _ = conn_out.send(&[0x2000_0000 | ((NOTE_ON_MSG as u32) << 16) | ((note as u32) << 8) | (VELOCITY as u32)]);
             sleep(Duration::from_millis(duration * 150));
-            let _ = conn_out.send(&[NOTE_OFF_MSG, note, VELOCITY]);
+            let _ = conn_out.send(&[0x2000_0000 | ((NOTE_OFF_MSG as u32) << 16) | ((note as u32) << 8) | (VELOCITY as u32)]);
         };
 
         sleep(Duration::from_millis(4 * 150));

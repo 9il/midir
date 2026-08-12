@@ -110,43 +110,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<MidiInput>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let in_port = match MidiInPort::FromIdAsync(&port.id) {
-            Ok(port_async) => match port_async.join() {
-                Ok(port) => port,
-                _ => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-            },
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        let handler_data = Arc::new(Mutex::new(HandlerData {
-            ignore_flags: self.ignore_flags,
-            callback: Box::new(callback),
-            user_data: Some(data),
-        }));
-        let handler_data2 = handler_data.clone();
-
-        type Handler = TypedEventHandler<MidiInPort, MidiMessageReceivedEventArgs>;
-        let handler = Handler::new(
-            move |_sender, args: windows::core::Ref<'_, MidiMessageReceivedEventArgs>| {
-                MidiInput::handle_input(
-                    args.as_ref()
-                        .expect("MidiMessageReceivedEventArgs were null"),
-                    &mut *handler_data2.lock().unwrap(),
-                );
-                Ok(())
-            },
-        );
-        let event_token = in_port
-            .MessageReceived(&handler)
-            .expect("MessageReceived failed");
-
-        Ok(MidiInputConnection {
-            port: RtMidiInPort(in_port),
-            event_token,
-            handler_data,
-        })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -186,7 +153,7 @@ impl<T> MidiInputConnection<T> {
 /// offsets after monomorphization.
 struct HandlerData<T> {
     ignore_flags: Ignore,
-    callback: Box<dyn FnMut(u64, &[u8], &mut T) + Send>,
+    callback: Box<dyn FnMut(u64, &[u32], &mut T) + Send>,
     user_data: Option<T>,
 }
 
@@ -254,14 +221,8 @@ impl MidiOutput {
         port: &MidiOutputPort,
         _port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<MidiOutput>> {
-        let out_port = match MidiOutPort::FromIdAsync(&port.id) {
-            Ok(port_async) => match port_async.join() {
-                Ok(port) => port,
-                _ => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-            },
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-        Ok(MidiOutputConnection { port: out_port })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -280,17 +241,10 @@ impl MidiOutputConnection {
         }
     }
 
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        let data_writer = DataWriter::new().unwrap();
-        data_writer
-            .WriteBytes(message)
-            .map_err(|_| SendError::Other("WriteBytes failed"))?;
-        let buffer = data_writer
-            .DetachBuffer()
-            .map_err(|_| SendError::Other("DetachBuffer failed"))?;
-        self.port
-            .SendBuffer(&buffer)
-            .map_err(|_| SendError::Other("SendBuffer failed"))?;
-        Ok(())
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 }

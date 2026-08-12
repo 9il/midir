@@ -3,13 +3,13 @@ members = [".", "examples/browser"]
 
 [package]
 name = "midir"
-version = "0.11.0"
-authors = ["Patrick Reisert"]
-description = "A cross-platform, realtime MIDI processing library, inspired by RtMidi."
-repository = "https://github.com/Boddlnagg/midir"
+version = "0.12.0-ump.0"
+authors = ["Patrick Reisert", "9il (UMP fork)"]
+description = "UMP (MIDI 2.0) host I/O fork of midir — raw Universal MIDI Packet words, not MIDI 1.0 bytes."
+repository = "https://github.com/9il/midir"
 documentation = "https://docs.rs/midir"
 readme = "README.md"
-keywords = ["midi", "audio", "music", "sound"]
+keywords = ["midi", "midi2", "ump", "audio", "music"]
 categories = ["multimedia::audio", "api-bindings"]
 license = "MIT"
 edition = "2021"

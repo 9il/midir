@@ -18,7 +18,7 @@ where
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static;
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static;
 }
 
 /// Trait that is implemented by `MidiOutput` on platforms that

@@ -157,7 +157,7 @@ pub struct MidiInputConnection<T: 'static> {
     trigger_send_fd: Option<PipeFd>,
 }
 
-type CallbackFn<T> = dyn FnMut(u64, &[u8], &mut T) + Send;
+type CallbackFn<T> = dyn FnMut(u64, &[u32], &mut T) + Send;
 
 struct HandlerData<T: 'static> {
     ignore_flags: Ignore,
@@ -293,96 +293,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let trigger_fds = match self.init_trigger() {
-            Ok(fds) => fds,
-            Err(()) => {
-                return Err(ConnectError::other(
-                    "could not create communication pipe for ALSA handler",
-                    self,
-                ));
-            }
-        };
-
-        let queue_id = self.init_queue();
-
-        let src_pinfo = match self.seq.as_ref().unwrap().get_any_port_info(port.addr) {
-            Ok(p) => p,
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        let c_port_name = match CString::new(port_name) {
-            Ok(c_port_name) => c_port_name,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "port_name must not contain null bytes",
-                    self,
-                ))
-            }
-        };
-
-        let vport = match self.create_port(&c_port_name, queue_id) {
-            Ok(vp) => vp,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "could not create ALSA input port",
-                    self,
-                ));
-            }
-        };
-
-        // Make subscription
-        let sub = PortSubscribe::empty().unwrap();
-        sub.set_sender(src_pinfo.addr());
-        sub.set_dest(Addr {
-            client: self.seq.as_ref().unwrap().client_id().unwrap(),
-            port: vport,
-        });
-        if self.seq.as_ref().unwrap().subscribe_port(&sub).is_err() {
-            return Err(ConnectError::other(
-                "could not create ALSA input subscription",
-                self,
-            ));
-        }
-        let subscription = sub;
-
-        // Start the input queue
-        self.start_input_queue(queue_id);
-
-        // Start our MIDI input thread.
-        let handler_data = HandlerData {
-            ignore_flags: self.ignore_flags,
-            seq: self.seq.take().unwrap(),
-            trigger_rcv_fd: Some(trigger_fds.0),
-            callback: Box::new(callback),
-            queue_id,
-        };
-
-        let threadbuilder = Builder::new();
-        let name = format!("midir ALSA input handler (port '{}')", port_name);
-        let threadbuilder = threadbuilder.name(name);
-        let thread = match threadbuilder.spawn(move || {
-            let mut d = data;
-            let h = handle_input(handler_data, &mut d);
-            (h, d) // return both the handler data and the user data
-        }) {
-            Ok(handle) => handle,
-            Err(_) => {
-                //unsafe { snd_seq_unsubscribe_port(self.seq.as_mut_ptr(), sub.as_ptr()) };
-                return Err(ConnectError::other(
-                    "could not start ALSA input handler thread",
-                    self,
-                ));
-            }
-        };
-
-        Ok(MidiInputConnection {
-            subscription: Some(subscription),
-            thread: Some(thread),
-            vport,
-            trigger_send_fd: Some(trigger_fds.1),
-        })
+        let _ = (port, port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     pub fn create_virtual<F, T: Send>(
@@ -392,74 +306,10 @@ impl MidiInput {
         data: T,
     ) -> Result<MidiInputConnection<T>, ConnectError<Self>>
     where
-        F: FnMut(u64, &[u8], &mut T) + Send + 'static,
+        F: FnMut(u64, &[u32], &mut T) + Send + 'static,
     {
-        let trigger_fds = match self.init_trigger() {
-            Ok(fds) => fds,
-            Err(()) => {
-                return Err(ConnectError::other(
-                    "could not create communication pipe for ALSA handler",
-                    self,
-                ));
-            }
-        };
-
-        let queue_id = self.init_queue();
-
-        let c_port_name = match CString::new(port_name) {
-            Ok(c_port_name) => c_port_name,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "port_name must not contain null bytes",
-                    self,
-                ))
-            }
-        };
-
-        let vport = match self.create_port(&c_port_name, queue_id) {
-            Ok(vp) => vp,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "could not create ALSA input port",
-                    self,
-                ));
-            }
-        };
-
-        // Start the input queue
-        self.start_input_queue(queue_id);
-
-        // Start our MIDI input thread.
-        let handler_data = HandlerData {
-            ignore_flags: self.ignore_flags,
-            seq: self.seq.take().unwrap(),
-            trigger_rcv_fd: Some(trigger_fds.0),
-            callback: Box::new(callback),
-            queue_id,
-        };
-
-        let threadbuilder = Builder::new();
-        let thread = match threadbuilder.spawn(move || {
-            let mut d = data;
-            let h = handle_input(handler_data, &mut d);
-            (h, d) // return both the handler data and the user data
-        }) {
-            Ok(handle) => handle,
-            Err(_) => {
-                //unsafe { snd_seq_unsubscribe_port(self.seq.as_mut_ptr(), sub.as_ptr()) };
-                return Err(ConnectError::other(
-                    "could not start ALSA input handler thread",
-                    self,
-                ));
-            }
-        };
-
-        Ok(MidiInputConnection {
-            subscription: None,
-            thread: Some(thread),
-            vport,
-            trigger_send_fd: Some(trigger_fds.1),
-        })
+        let _ = (port_name, callback, data);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -603,93 +453,16 @@ impl MidiOutput {
         port: &MidiOutputPort,
         port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<Self>> {
-        let pinfo = match self.seq.as_ref().unwrap().get_any_port_info(port.addr) {
-            Ok(p) => p,
-            Err(_) => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self)),
-        };
-
-        let c_port_name = match CString::new(port_name) {
-            Ok(c_port_name) => c_port_name,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "port_name must not contain null bytes",
-                    self,
-                ))
-            }
-        };
-
-        let vport = match self.seq.as_ref().unwrap().create_simple_port(
-            &c_port_name,
-            PortCap::READ | PortCap::SUBS_READ,
-            PortType::MIDI_GENERIC | PortType::APPLICATION,
-        ) {
-            Ok(vport) => vport,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "could not create ALSA output port",
-                    self,
-                ))
-            }
-        };
-
-        // Make subscription
-        let sub = PortSubscribe::empty().unwrap();
-        sub.set_sender(Addr {
-            client: self.seq.as_ref().unwrap().client_id().unwrap(),
-            port: vport,
-        });
-        sub.set_dest(pinfo.addr());
-        sub.set_time_update(true);
-        sub.set_time_real(true);
-        if self.seq.as_ref().unwrap().subscribe_port(&sub).is_err() {
-            return Err(ConnectError::other(
-                "could not create ALSA output subscription",
-                self,
-            ));
-        }
-
-        Ok(MidiOutputConnection {
-            seq: self.seq.take(),
-            vport,
-            coder: helpers::EventEncoder::new(INITIAL_CODER_BUFFER_SIZE as u32),
-            subscription: Some(sub),
-        })
+        let _ = (port, port_name);
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 
     pub fn create_virtual(
         mut self,
         port_name: &str,
     ) -> Result<MidiOutputConnection, ConnectError<Self>> {
-        let c_port_name = match CString::new(port_name) {
-            Ok(c_port_name) => c_port_name,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "port_name must not contain null bytes",
-                    self,
-                ))
-            }
-        };
-
-        let vport = match self.seq.as_ref().unwrap().create_simple_port(
-            &c_port_name,
-            PortCap::READ | PortCap::SUBS_READ,
-            PortType::MIDI_GENERIC | PortType::APPLICATION,
-        ) {
-            Ok(vport) => vport,
-            Err(_) => {
-                return Err(ConnectError::other(
-                    "could not create ALSA output port",
-                    self,
-                ))
-            }
-        };
-
-        Ok(MidiOutputConnection {
-            seq: self.seq.take(),
-            vport,
-            coder: helpers::EventEncoder::new(INITIAL_CODER_BUFFER_SIZE as u32),
-            subscription: None,
-        })
+        let _ = port_name;
+        Err(ConnectError::other("UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)", self))
     }
 }
 
@@ -702,38 +475,11 @@ impl MidiOutputConnection {
         }
     }
 
-    pub fn send(&mut self, message: &[u8]) -> Result<(), SendError> {
-        let nbytes = message.len();
-        assert!(nbytes <= u32::MAX as usize);
-
-        if nbytes > self.coder.get_buffer_size() as usize
-            && self.coder.resize_buffer(nbytes as u32).is_err()
-        {
-            return Err(SendError::Other("could not resize ALSA encoding buffer"));
-        }
-
-        let mut ev = match self.coder.get_wrapped().encode(message) {
-            Ok((_, Some(ev))) => ev,
-            _ => return Err(SendError::InvalidData("ALSA encoder reported invalid data")),
-        };
-
-        ev.set_source(self.vport);
-        ev.set_subs();
-        ev.set_direct();
-
-        // Send the event.
-        if self
-            .seq
-            .as_ref()
-            .unwrap()
-            .event_output_direct(&mut ev)
-            .is_err()
-        {
-            return Err(SendError::Other("could not send encoded ALSA message"));
-        }
-
-        let _ = self.seq.as_mut().unwrap().drain_output();
-        Ok(())
+    pub fn send(&mut self, words: &[u32]) -> Result<(), SendError> {
+        let _ = words;
+        Err(SendError::Other(
+            "UMP MIDI 2.0 not implemented on this backend yet (see docs/ump-backend-compliance.md)",
+        ))
     }
 
     fn close_internal(&mut self) {

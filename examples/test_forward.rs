@@ -35,7 +35,7 @@ fn run() -> Result<(), Box<dyn Error>> {
             conn_out
                 .send(message)
                 .unwrap_or_else(|_| println!("Error when forwarding message ..."));
-            println!("{}: {:?} (len = {})", stamp, message, message.len());
+            println!("{}: {:?} (len = {})", stamp, message, message.len() /* ump words */);
         },
         (),
     )?;

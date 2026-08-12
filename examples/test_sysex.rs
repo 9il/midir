@@ -1,88 +1,54 @@
+use std::error::Error;
+use std::io::{stdin, stdout, Write};
+use std::thread::sleep;
+use std::time::Duration;
+
+use midir::{MidiOutput, MidiOutputPort};
+
 fn main() {
-    env_logger::init();
-    match example::run() {
+    match run() {
         Ok(_) => (),
         Err(err) => println!("Error: {}", err),
     }
 }
 
-#[cfg(not(any(windows, target_arch = "wasm32")))] // virtual ports are not supported on Windows nor on Web MIDI
-mod example {
-
-    use std::error::Error;
-    use std::thread::sleep;
-    use std::time::Duration;
-
-    use midir::os::unix::VirtualInput;
-    use midir::{Ignore, MidiInput, MidiOutput};
-
-    const LARGE_SYSEX_SIZE: usize = 5572; // This is the maximum that worked for me
-
-    pub fn run() -> Result<(), Box<dyn Error>> {
-        let mut midi_in = MidiInput::new("My Test Input")?;
-        midi_in.ignore(Ignore::None);
-        let midi_out = MidiOutput::new("My Test Output")?;
-
-        let previous_count = midi_out.port_count();
-
-        println!("Creating virtual input port ...");
-        let conn_in = midi_in.create_virtual(
-            "midir-test",
-            |stamp, message, _| {
-                println!("{}: {:?} (len = {})", stamp, message, message.len());
-            },
-            (),
-        )?;
-
-        assert_eq!(midi_out.port_count(), previous_count + 1);
-
-        let out_ports = midi_out.ports();
-        let new_port = out_ports.last().unwrap();
-        println!(
-            "Connecting to port '{}' ...",
-            midi_out.port_name(&new_port).unwrap()
-        );
-        let mut conn_out = midi_out.connect(&new_port, "midir-test")?;
-        println!("Starting to send messages ...");
-        //sleep(Duration::from_millis(2000));
-        println!("Sending NoteOn message");
-        conn_out.send(&[144, 60, 1])?;
-        sleep(Duration::from_millis(200));
-        println!("Sending small SysEx message ...");
-        conn_out.send(&[0xF0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF7])?;
-        sleep(Duration::from_millis(200));
-        println!("Sending large SysEx message ...");
-        let mut v = Vec::with_capacity(LARGE_SYSEX_SIZE);
-        v.push(0xF0u8);
-        for _ in 1..LARGE_SYSEX_SIZE - 1 {
-            v.push(0u8);
+fn run() -> Result<(), Box<dyn Error>> {
+    let midi_out = MidiOutput::new("midir ump test")?;
+    let out_ports = midi_out.ports();
+    let out_port: &MidiOutputPort = match out_ports.len() {
+        0 => return Err("no output port found".into()),
+        1 => {
+            println!("Selecting the only available output port: {}", midi_out.port_name(&out_ports[0]).unwrap());
+            &out_ports[0]
         }
-        v.push(0xF7u8);
-        assert_eq!(v.len(), LARGE_SYSEX_SIZE);
-        conn_out.send(&v)?;
-        sleep(Duration::from_millis(200));
-        // FIXME: the following doesn't seem to work with ALSA
-        println!("Sending large SysEx message (chunked)...");
-        for ch in v.chunks(4) {
-            conn_out.send(ch)?;
+        _ => {
+            println!("Available output ports:");
+            for (i, p) in out_ports.iter().enumerate() {
+                println!("{}: {}", i, midi_out.port_name(p).unwrap());
+            }
+            print!("Please select output port: ");
+            stdout().flush()?;
+            let mut input = String::new();
+            stdin().read_line(&mut input)?;
+            out_ports
+                .get(input.trim().parse::<usize>()?)
+                .ok_or("invalid output port selected")?
         }
-        sleep(Duration::from_millis(200));
-        println!("Sending small SysEx message ...");
-        conn_out.send(&[0xF0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xF7])?;
-        sleep(Duration::from_millis(200));
-        println!("Closing output ...");
-        conn_out.close();
-        println!("Closing virtual input ...");
-        conn_in.close().0;
-        Ok(())
-    }
-}
+    };
 
-// needed to compile successfully
-#[cfg(any(windows, target_arch = "wasm32"))]
-mod example {
-    use std::error::Error;
-    pub fn run() -> Result<(), Box<dyn Error>> {
-        Ok(())
-    }
+    println!("Opening connection");
+    let mut conn_out = midi_out.connect(out_port, "midir-ump-test")?;
+    println!("Connection open. Sending one Data128-shaped UMP (4 words), then a MIDI 1.0 Note On UMP…");
+    sleep(Duration::from_millis(200));
+
+    // One complete SysEx8-style Data128 UMP (MT=0x5) — illustrative words only.
+    conn_out.send(&[0x5001_0000, 0x0102_0304, 0x0506_0708, 0x090A_0B0C])?;
+    sleep(Duration::from_millis(200));
+    // MIDI 1.0 Note On middle C in UMP (MT=0x2), velocity 100.
+    conn_out.send(&[0x2090_3C64])?;
+    sleep(Duration::from_millis(200));
+    conn_out.send(&[0x2080_3C00])?;
+
+    println!("Done");
+    Ok(())
 }
